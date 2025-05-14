@@ -1,24 +1,36 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-import os
+import zipfile
+import shutil
 
 st.set_page_config(page_title="Unificador de Scores", layout="wide")
 st.title("📊 Unificação de Scores das Igrejas por Mês")
 
-# 🔍 Entrada: caminho para as pastas mensais (fora do projeto)
-caminho = st.text_input("📁 Informe o caminho local das pastas de dados (ex: C:/meus_dados)", "")
+# 🔍 Entrada: upload de um arquivo ZIP contendo as pastas
+uploaded_zip = st.file_uploader("📁 Selecione o arquivo ZIP contendo as pastas de dados", type="zip")
 
-if not caminho:
-    st.info("Informe um caminho válido para continuar.")
-elif not os.path.isdir(caminho):
-    st.error("❌ Caminho inválido ou inexistente.")
-else:
-    base_path = Path(caminho)
-    pastas_mensais = sorted([p for p in base_path.iterdir() if p.is_dir()])
+if uploaded_zip:
+    # Criar um diretório temporário para armazenar o conteúdo extraído
+    temp_dir = Path("temp_folder")
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)  # Limpar a pasta temporária se já existir
+    temp_dir.mkdir()
+
+    # Salvar o arquivo ZIP temporariamente
+    zip_path = temp_dir / uploaded_zip.name
+    with open(zip_path, "wb") as f:
+        f.write(uploaded_zip.getbuffer())
+
+    # Extrair o conteúdo do ZIP
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        zip_ref.extractall(temp_dir)
+
+    # Organizar as pastas extraídas
+    pastas_mensais = sorted([p for p in temp_dir.iterdir() if p.is_dir()])
 
     if not pastas_mensais:
-        st.warning("🚫 Nenhuma subpasta mensal encontrada nesse caminho.")
+        st.warning("🚫 Nenhuma subpasta mensal encontrada dentro do arquivo ZIP.")
     else:
         abas = st.tabs([p.name for p in pastas_mensais])
 

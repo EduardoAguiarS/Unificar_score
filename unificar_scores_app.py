@@ -11,22 +11,18 @@ st.title("📊 Unificação de Scores das Igrejas por Mês")
 uploaded_zip = st.file_uploader("📁 Selecione o arquivo ZIP contendo as pastas de dados", type="zip")
 
 if uploaded_zip:
-    # Criar um diretório temporário para armazenar o conteúdo extraído
     temp_dir = Path("temp_folder")
     if temp_dir.exists():
-        shutil.rmtree(temp_dir)  # Limpar a pasta temporária se já existir
+        shutil.rmtree(temp_dir)
     temp_dir.mkdir()
 
-    # Salvar o arquivo ZIP temporariamente
     zip_path = temp_dir / uploaded_zip.name
     with open(zip_path, "wb") as f:
         f.write(uploaded_zip.getbuffer())
 
-    # Extrair o conteúdo do ZIP
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
         zip_ref.extractall(temp_dir)
 
-    # Organizar as pastas extraídas
     pastas_mensais = sorted([p for p in temp_dir.iterdir() if p.is_dir()])
 
     if not pastas_mensais:
@@ -65,8 +61,14 @@ if uploaded_zip:
                             col_score: f"Score_{categoria}"
                         })
 
-                        # Remover ponto final do ID e padronizar
-                        df["Id Igreja"] = df["Id Igreja"].astype(str).str.replace(r"\.$", "", regex=True)
+                        # ✅ Corrigir "Id Igreja": remover pontos de milhar e manter como string limpa
+                        df["Id Igreja"] = (
+                            df["Id Igreja"]
+                            .astype(str)
+                            .str.replace(".", "", regex=False)
+                            .str.extract(r"(\d+)", expand=False)  # extrai somente os números
+                            .fillna("0")
+                        )
 
                         df = df[["Id Igreja", "Nome Igreja", f"Score_{categoria}"]]
                         planilhas.append(df)
@@ -85,16 +87,15 @@ if uploaded_zip:
                         resultado[col] = (
                             resultado[col]
                             .astype(str)
-                            .str.replace(".", "", regex=False)
-                            .str.replace(",", ".", regex=False)
-                            .str.replace(r"[^\d\.]", "", regex=True)
-                            .replace("", "0")
+                            .str.replace(".", "", regex=False)  # remove milhar
+                            .str.replace(",", ".", regex=False)  # trata decimal com vírgula
+                            .str.extract(r"(\d+\.?\d*)", expand=False)
+                            .fillna("0")
                             .astype(float)
-                            .round(2)
+                            .astype(int)  # remove casas decimais
                         )
 
-                    resultado["Score Total"] = resultado[score_cols].sum(axis=1).round(2)
-
+                    resultado["Score Total"] = resultado[score_cols].sum(axis=1).astype(int)
                     resultado = resultado.sort_values(by="Score Total", ascending=False)
 
                     filtro = st.text_input("🔍 Buscar igreja por nome", key=f"filtro_{pasta.name}")

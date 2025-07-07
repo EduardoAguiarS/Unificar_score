@@ -52,6 +52,6 @@ pip install -r requirements.txt
 
 Execute o App
 ```bash
-streamlit run unificador_scores_app.py
+streamlit run unificar_scores_app.py
 ```
 Selecione a pasta dados/ quando solicitado pela interface do Streamlit.

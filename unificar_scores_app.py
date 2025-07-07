@@ -3,12 +3,56 @@ import pandas as pd
 from pathlib import Path
 import zipfile
 import shutil
+import re
 
 st.set_page_config(page_title="Unificador de Scores", layout="wide")
 st.title("📊 Unificação de Scores das Igrejas por Mês")
 
-# 🔍 Entrada: upload de um arquivo ZIP contendo as pastas
-uploaded_zip = st.file_uploader("📁 Selecione o arquivo ZIP contendo as pastas de dados", type="zip")
+uploaded_zip = st.file_uploader("📁 Selecione o arquivo ZIP contendo as pastas de dados mensais", type="zip")
+
+
+st.markdown("---")
+igrejas_csv = st.file_uploader("📅 Envie o arquivo com os dados das igrejas (colunas esperadas: 'id' e 'data_cadastro')", type="csv")
+
+df_igrejas = None
+if igrejas_csv:
+    try:
+        df_igrejas = pd.read_csv(igrejas_csv)
+
+        st.write("Colunas do CSV de igrejas:", list(df_igrejas.columns))
+
+        def achar_coluna(cols, pattern):
+            pattern_norm = re.sub(r"[^a-z0-9]", "", pattern.lower())
+            for c in cols:
+                c_norm = re.sub(r"[^a-z0-9]", "", c.lower())
+                if c_norm == pattern_norm:
+                    return c
+            return None
+
+        col_id = achar_coluna(df_igrejas.columns, "id")
+        col_data = achar_coluna(df_igrejas.columns, "data_cadastro")
+
+        if not col_id or not col_data:
+            st.warning(f"⚠️ O arquivo de igrejas deve conter as colunas 'id' e 'data_cadastro'.\nEncontrado: {list(df_igrejas.columns)}")
+            df_igrejas = None
+        else:
+            df_igrejas = df_igrejas.rename(columns={
+                col_id: "Id Igreja",
+                col_data: "Data Cadastro"
+            })
+
+            df_igrejas["Id Igreja"] = (
+                df_igrejas["Id Igreja"]
+                .astype(str)
+                .str.replace(".", "", regex=False)
+                .str.extract(r"(\d+)", expand=False)
+                .fillna("0")
+            )
+
+            df_igrejas["Data Cadastro"] = pd.to_datetime(df_igrejas["Data Cadastro"], errors="coerce")
+
+    except Exception as e:
+        st.error(f"Erro ao processar o arquivo de igrejas: {e}")
 
 if uploaded_zip:
     temp_dir = Path("temp_folder")
@@ -23,7 +67,8 @@ if uploaded_zip:
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
         zip_ref.extractall(temp_dir)
 
-    pastas_mensais = sorted([p for p in temp_dir.iterdir() if p.is_dir()])
+    dados_root = next((p for p in temp_dir.iterdir() if p.is_dir() and p.name.lower() == "dados"), temp_dir)
+    pastas_mensais = sorted([p for p in dados_root.iterdir() if p.is_dir()])
 
     if not pastas_mensais:
         st.warning("🚫 Nenhuma subpasta mensal encontrada dentro do arquivo ZIP.")
@@ -61,12 +106,11 @@ if uploaded_zip:
                             col_score: f"Score_{categoria}"
                         })
 
-                        # ✅ Corrigir "Id Igreja": remover pontos de milhar e manter como string limpa
                         df["Id Igreja"] = (
                             df["Id Igreja"]
                             .astype(str)
                             .str.replace(".", "", regex=False)
-                            .str.extract(r"(\d+)", expand=False)  # extrai somente os números
+                            .str.extract(r"(\d+)", expand=False)
                             .fillna("0")
                         )
 
@@ -87,16 +131,23 @@ if uploaded_zip:
                         resultado[col] = (
                             resultado[col]
                             .astype(str)
-                            .str.replace(".", "", regex=False)  # remove milhar
-                            .str.replace(",", ".", regex=False)  # trata decimal com vírgula
+                            .str.replace(".", "", regex=False)
+                            .str.replace(",", ".", regex=False)
                             .str.extract(r"(\d+\.?\d*)", expand=False)
                             .fillna("0")
                             .astype(float)
-                            .astype(int)  # remove casas decimais
+                            .astype(int)
                         )
 
                     resultado["Score Total"] = resultado[score_cols].sum(axis=1).astype(int)
                     resultado = resultado.sort_values(by="Score Total", ascending=False)
+
+                    if df_igrejas is not None:
+                        resultado = pd.merge(resultado, df_igrejas, on="Id Igreja", how="left")
+
+                        igrejas_sem_data = resultado[resultado["Data Cadastro"].isna()]
+                        if not igrejas_sem_data.empty:
+                            st.warning(f"⚠️ {len(igrejas_sem_data)} igrejas não possuem data de cadastro na planilha enviada.")
 
                     filtro = st.text_input("🔍 Buscar igreja por nome", key=f"filtro_{pasta.name}")
                     if filtro:
